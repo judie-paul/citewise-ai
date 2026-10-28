@@ -66,7 +66,8 @@ references-generator/
 │       ├── search/     # query building, dedup, ranking, filtering
 │       ├── store/      # SQLite persistence
 │       └── web/        # handlers, html/template pages, CSS and JS (embedded)
-├── build.ps1           # Windows build script
+├── build.bat           # Windows build script (Command Prompt / double-click)
+├── build.ps1           # Windows build script (PowerShell)
 ├── build.sh            # macOS / Linux / Git Bash build script
 └── .env.example        # configuration template
 ```
@@ -197,6 +198,15 @@ go build ./...
 The Go source lives in `code/`, and the compiled executable goes in `build/`.
 
 ### Option 1: build scripts (recommended)
+
+**Windows (Command Prompt)**. Double-click `build.bat` in File Explorer, or run it from the repository root:
+
+```bat
+build.bat            :: builds build\citewise.exe
+build.bat test       :: runs gofmt check, go vet and go test first, then builds
+```
+
+`build.bat` works from any directory and isn't affected by PowerShell's execution policy.
 
 **Windows (PowerShell)**, from the repository root:
 

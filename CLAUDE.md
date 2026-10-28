@@ -11,7 +11,7 @@ CiteWise AI is a single Go web server that finds real academic references (Cross
 ## Commands
 
 ```bash
-./build.sh [--test]            # or .\build.ps1 [-Test]; builds build/citewise(.exe)
+build.bat [test]               # Windows cmd; or .\build.ps1 [-Test], ./build.sh [--test]
 cd code && go run .            # dev run (reads code/.env, DB at code/data/)
 cd code && go test ./...
 go test ./internal/web -run TestUploadFlow      # single test
