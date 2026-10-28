@@ -1,0 +1,38 @@
+{{define "content"}}
+<section class="hero">
+  <h1>Find genuine academic references for your essay</h1>
+  <p class="lead">CiteWise AI searches Crossref and OpenAlex for real publications and formats them in APA 7 or Harvard style. It never makes up references. If nothing suitable turns up, it tells you so.</p>
+</section>
+
+<div class="cards">
+  <section class="card">
+    <h2>Search by essay title</h2>
+    <p>Enter your essay title or research topic and get a list of relevant books and journal articles. You don't need to upload anything.</p>
+    <a class="btn" href="/references/search">Search by title</a>
+  </section>
+  <section class="card">
+    <h2>Upload an existing essay</h2>
+    <p>Upload a PDF, DOCX or TXT essay. CiteWise picks out its key claims and suggests sources for each one, which you can approve or reject.</p>
+    {{if not .AIEnabled}}<p class="notice notice-warn">Essay analysis needs an OpenAI API key, and none is configured. Title search still works.</p>{{end}}
+    <a class="btn" href="/references/upload">Upload an essay</a>
+  </section>
+  <section class="card">
+    <h2>Your saved references</h2>
+    <p>Review saved references, switch citation styles, copy citations and export a bibliography as plain text or BibTeX.</p>
+    <a class="btn btn-secondary" href="/references/saved">View saved references</a>
+  </section>
+</div>
+
+<section>
+  <h2>Recent searches</h2>
+  {{with .Page.Recent}}
+  <ul class="search-list">
+    {{range .}}
+    <li><a href="/references/results/{{.ID}}">{{.Topic}}</a> <span class="muted">{{if eq .Type "essay"}}Essay upload{{else}}Title search{{end}} · {{styleLabel .Style}} · {{date .CreatedAt}}</span></li>
+    {{end}}
+  </ul>
+  {{else}}
+  <p class="muted">No searches yet. Start with a title search.</p>
+  {{end}}
+</section>
+{{end}}

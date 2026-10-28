@@ -1,0 +1,60 @@
+{{define "content"}}{{with .Page}}
+<h1>Search by essay title</h1>
+<p class="lead">Enter your essay title or research topic. CiteWise will search Crossref and OpenAlex for matching academic publications.</p>
+{{if not $.AIEnabled}}<p class="notice">AI query generation is off because no OpenAI API key is set, so a keyword search is used instead.</p>{{end}}
+
+{{with .Error}}<div class="notice notice-error" role="alert">{{.}}</div>{{end}}
+{{if .Errors}}<div class="notice notice-error" role="alert">Please correct the highlighted fields below.</div>{{end}}
+
+<form method="post" action="/references/search" class="form" novalidate>
+  <div class="field{{if .Errors.topic}} has-error{{end}}">
+    <label for="topic">Essay title or research topic <span class="req">(required)</span></label>
+    <input type="text" id="topic" name="topic" value="{{.Topic}}" required minlength="3" maxlength="300"
+      {{if .Errors.topic}}aria-invalid="true" aria-describedby="topic-error"{{end}} placeholder="e.g. The effects of social media on adolescent mental health">
+    {{with .Errors.topic}}<p class="field-error" id="topic-error">{{.}}</p>{{end}}
+  </div>
+
+  <div class="field{{if .Errors.description}} has-error{{end}}">
+    <label for="description">Description <span class="opt">(optional)</span></label>
+    <textarea id="description" name="description" rows="4" maxlength="2000" aria-describedby="description-help{{if .Errors.description}} description-error{{end}}">{{.Description}}</textarea>
+    <p class="help" id="description-help">Add the angle, key concepts or context of your essay to get more focused results.</p>
+    {{with .Errors.description}}<p class="field-error" id="description-error">{{.}}</p>{{end}}
+  </div>
+
+  <div class="field-row">
+    <div class="field{{if .Errors.style}} has-error{{end}}">
+      <label for="style">Citation style</label>
+      <select id="style" name="style">
+        <option value="apa" {{if eq .Style "apa"}}selected{{end}}>APA 7th edition</option>
+        <option value="harvard" {{if eq .Style "harvard"}}selected{{end}}>Harvard</option>
+      </select>
+      {{with .Errors.style}}<p class="field-error">{{.}}</p>{{end}}
+    </div>
+    <div class="field{{if .Errors.count}} has-error{{end}}">
+      <label for="count">Number of references</label>
+      <input type="number" id="count" name="count" value="{{.Count}}" min="1" max="50" required
+        {{if .Errors.count}}aria-invalid="true" aria-describedby="count-error"{{end}}>
+      {{with .Errors.count}}<p class="field-error" id="count-error">{{.}}</p>{{end}}
+    </div>
+  </div>
+
+  <fieldset class="field-row">
+    <legend>Publication years <span class="opt">(optional)</span></legend>
+    <div class="field{{if .Errors.year_from}} has-error{{end}}">
+      <label for="year_from">From</label>
+      <input type="number" id="year_from" name="year_from" value="{{.YearFrom}}" min="1800" max="{{.MaxYear}}" inputmode="numeric"
+        {{if .Errors.year_from}}aria-invalid="true" aria-describedby="year_from-error"{{end}}>
+      {{with .Errors.year_from}}<p class="field-error" id="year_from-error">{{.}}</p>{{end}}
+    </div>
+    <div class="field{{if .Errors.year_to}} has-error{{end}}">
+      <label for="year_to">To</label>
+      <input type="number" id="year_to" name="year_to" value="{{.YearTo}}" min="1800" max="{{.MaxYear}}" inputmode="numeric"
+        {{if .Errors.year_to}}aria-invalid="true" aria-describedby="year_to-error"{{end}}>
+      {{with .Errors.year_to}}<p class="field-error" id="year_to-error">{{.}}</p>{{end}}
+    </div>
+  </fieldset>
+
+  <button type="submit" class="btn btn-primary" data-busy-text="Searching…">Find references</button>
+  <p class="help">A search usually takes 5–20 seconds.</p>
+</form>
+{{end}}{{end}}

@@ -1,0 +1,25 @@
+{{define "content"}}{{with .Page}}
+<h1>Saved references</h1>
+<p class="lead">Your saved references are stored in this application's local database. There are no user accounts, so everyone using this installation sees the same list.</p>
+{{template "style-switch" (styleNav "/references/saved" .Style)}}
+
+{{if .Items}}
+{{template "export-bar" .}}
+<ol class="refs">{{range .Items}}{{template "ref" .}}{{end}}</ol>
+{{else}}
+<p class="empty">You haven't saved any references yet. <a href="/references/search">Search by title</a> or <a href="/references/upload">upload an essay</a>, then select <em>Save reference</em>.</p>
+{{end}}
+
+<section>
+  <h2>Previous searches</h2>
+  {{with .Searches}}
+  <ul class="search-list">
+    {{range .}}
+    <li><a href="/references/results/{{.ID}}">{{.Topic}}</a> <span class="muted">{{if eq .Type "essay"}}Essay upload{{else}}Title search{{end}} · {{styleLabel .Style}} · {{date .CreatedAt}}</span></li>
+    {{end}}
+  </ul>
+  {{else}}
+  <p class="muted">No searches yet.</p>
+  {{end}}
+</section>
+{{end}}{{end}}

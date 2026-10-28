@@ -1,0 +1,111 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}}{{if ne .Title "CiteWise AI"}} · CiteWise AI{{end}}</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="/">CiteWise <span>AI</span></a>
+    <nav aria-label="Main">
+      <ul>
+        <li><a href="/" {{if eq .Nav "home"}}aria-current="page"{{end}}>Home</a></li>
+        <li><a href="/references/search" {{if eq .Nav "search"}}aria-current="page"{{end}}>Search by title</a></li>
+        <li><a href="/references/upload" {{if eq .Nav "upload"}}aria-current="page"{{end}}>Upload essay</a></li>
+        <li><a href="/references/saved" {{if eq .Nav "saved"}}aria-current="page"{{end}}>Saved references</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+<main id="main" class="wrap">
+{{template "content" .}}
+</main>
+<footer class="site-footer">
+  <div class="wrap">
+    <p>Publication data comes from <a href="https://www.crossref.org/" rel="noopener noreferrer">Crossref</a> and <a href="https://openalex.org/" rel="noopener noreferrer">OpenAlex</a>. CiteWise never invents references. Always check a source before citing it.</p>
+    <p>Searches and saved references are stored in this application's local database and are shared by everyone using this installation (there are no user accounts).</p>
+  </div>
+</footer>
+</body>
+</html>{{end}}
+
+{{define "ref"}}
+<li class="ref" id="{{.Key}}">
+  <div class="ref-select">
+    <input type="checkbox" form="export-form" name="publication_id" value="{{.Pub.ID}}" id="sel-{{.Key}}">
+    <label for="sel-{{.Key}}" class="visually-hidden">Select “{{.Pub.Title}}” for export</label>
+  </div>
+  <div class="ref-body">
+    <p class="citation">{{.CitationHTML}}</p>
+    <p class="ref-meta">
+      In-text: <code>{{.InText}}</code>
+      <span aria-hidden="true">·</span> Source: {{.Pub.Source}}
+      {{with .Pub.Link}}<span aria-hidden="true">·</span> <a href="{{.}}" target="_blank" rel="noopener noreferrer">View publication<span class="visually-hidden"> (opens in new tab)</span></a>{{end}}
+      {{if .Saved}}<span class="badge">Saved</span>{{end}}
+      {{if .Essay}}{{if eq .Approved 1}}<span class="badge badge-ok">Approved</span>{{else if eq .Approved -1}}<span class="badge badge-no">Rejected</span>{{end}}{{end}}
+    </p>
+    {{with .Rationale}}<p class="rationale"><strong>Why it may fit:</strong> {{.}}</p>{{end}}
+    {{with .Pub.Abstract}}<details><summary>Abstract</summary><p>{{.}}</p></details>{{end}}
+    <div class="actions">
+      <button type="button" class="btn btn-secondary copy-btn" data-copy="{{.CitationText}}">Copy citation</button>
+      {{if .Essay}}
+        {{if ne .Approved 1}}
+        <form method="post" action="/references/save">
+          <input type="hidden" name="action" value="approve">
+          <input type="hidden" name="result_id" value="{{.ResultID}}">
+          <input type="hidden" name="return_to" value="{{.ReturnTo}}#{{.Key}}">
+          <button type="submit" class="btn">Approve &amp; save</button>
+        </form>
+        {{end}}
+        {{if ne .Approved -1}}
+        <form method="post" action="/references/save">
+          <input type="hidden" name="action" value="reject">
+          <input type="hidden" name="result_id" value="{{.ResultID}}">
+          <input type="hidden" name="return_to" value="{{.ReturnTo}}#{{.Key}}">
+          <button type="submit" class="btn btn-secondary">Reject</button>
+        </form>
+        {{end}}
+      {{else}}
+        <form method="post" action="/references/save">
+          <input type="hidden" name="publication_id" value="{{.Pub.ID}}">
+          <input type="hidden" name="return_to" value="{{.ReturnTo}}#{{.Key}}">
+          {{if .Saved}}
+          <input type="hidden" name="action" value="remove">
+          <button type="submit" class="btn btn-secondary">Remove from saved</button>
+          {{else}}
+          <input type="hidden" name="action" value="save">
+          <button type="submit" class="btn">Save reference</button>
+          {{end}}
+        </form>
+      {{end}}
+    </div>
+  </div>
+</li>
+{{end}}
+
+{{define "export-bar"}}
+<form id="export-form" class="export-bar" method="post" action="/references/export">
+  <input type="hidden" name="style" value="{{.Style}}">
+  <input type="hidden" name="return_to" value="{{.ReturnTo}}">
+  <button type="button" class="btn btn-secondary" data-select-all>Select all</button>
+  <label for="export-format">Export selected as</label>
+  <select id="export-format" name="format">
+    <option value="txt">Plain text (.txt)</option>
+    <option value="bibtex">BibTeX (.bib)</option>
+  </select>
+  <button type="submit" class="btn">Export</button>
+</form>
+{{end}}
+
+{{define "style-switch"}}
+<nav class="style-switch" aria-label="Citation style">
+  <span>Citation style:</span>
+  <a href="{{.Base}}?style=apa" {{if eq .Current "apa"}}aria-current="true"{{end}}>APA 7</a>
+  <a href="{{.Base}}?style=harvard" {{if eq .Current "harvard"}}aria-current="true"{{end}}>Harvard</a>
+</nav>
+{{end}}
