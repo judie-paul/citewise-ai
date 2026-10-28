@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS searches (
 	year_to         INTEGER NOT NULL DEFAULT 0,
 	ai_used         INTEGER NOT NULL DEFAULT 0,
 	queries_json    TEXT    NOT NULL DEFAULT '[]',
+	claims_json     TEXT    NOT NULL DEFAULT '[]',
 	notice          TEXT    NOT NULL DEFAULT '',
 	created_at      TEXT    NOT NULL
 );
@@ -145,8 +146,16 @@ type Search struct {
 	YearTo         int
 	AIUsed         bool
 	Queries        []string
+	Claims         []Claim // essay searches: AI-paraphrased claims (never essay text)
 	Notice         string
 	CreatedAt      time.Time
+}
+
+// Claim is an essay claim identified during analysis.
+type Claim struct {
+	Index   int    `json:"index"`
+	Section int    `json:"section"`
+	Text    string `json:"text"`
 }
 
 // ResultInput associates a publication with a search.
@@ -186,11 +195,15 @@ func (s *Store) SaveSearch(ctx context.Context, srch Search, results []ResultInp
 	if srch.Queries == nil {
 		queries = []byte("[]")
 	}
+	claims, _ := json.Marshal(srch.Claims)
+	if srch.Claims == nil {
+		claims = []byte("[]")
+	}
 	res, err := tx.ExecContext(ctx, `INSERT INTO searches
-		(topic, description, search_type, citation_style, requested_count, year_from, year_to, ai_used, queries_json, notice, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		(topic, description, search_type, citation_style, requested_count, year_from, year_to, ai_used, queries_json, claims_json, notice, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		srch.Topic, srch.Description, srch.Type, srch.Style, srch.RequestedCount,
-		srch.YearFrom, srch.YearTo, boolInt(srch.AIUsed), string(queries), srch.Notice, now())
+		srch.YearFrom, srch.YearTo, boolInt(srch.AIUsed), string(queries), string(claims), srch.Notice, now())
 	if err != nil {
 		return 0, fmt.Errorf("insert search: %w", err)
 	}
@@ -266,21 +279,23 @@ func upsertPublication(ctx context.Context, tx *sql.Tx, p models.Publication) (i
 	return id, nil
 }
 
-const searchCols = `id, topic, description, search_type, citation_style, requested_count, year_from, year_to, ai_used, queries_json, notice, created_at`
+const searchCols = `id, topic, description, search_type, citation_style, requested_count, year_from, year_to, ai_used, queries_json, claims_json, notice, created_at`
 
 func scanSearch(sc interface{ Scan(...any) error }) (Search, error) {
 	var (
 		s       Search
 		ai      int
 		queries string
+		claims  string
 		created string
 	)
 	if err := sc.Scan(&s.ID, &s.Topic, &s.Description, &s.Type, &s.Style, &s.RequestedCount,
-		&s.YearFrom, &s.YearTo, &ai, &queries, &s.Notice, &created); err != nil {
+		&s.YearFrom, &s.YearTo, &ai, &queries, &claims, &s.Notice, &created); err != nil {
 		return s, err
 	}
 	s.AIUsed = ai == 1
 	_ = json.Unmarshal([]byte(queries), &s.Queries)
+	_ = json.Unmarshal([]byte(claims), &s.Claims)
 	s.CreatedAt, _ = time.Parse(time.RFC3339, created)
 	return s, nil
 }

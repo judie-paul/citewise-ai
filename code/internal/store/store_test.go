@@ -129,10 +129,13 @@ func TestSavedReferences(t *testing.T) {
 func TestApprovalAndDocuments(t *testing.T) {
 	s := openTemp(t)
 	ctx := context.Background()
-	id, err := s.SaveSearch(ctx, Search{Topic: "essay", Type: "essay", Style: "apa"},
+	id, err := s.SaveSearch(ctx, Search{Topic: "essay", Type: "essay", Style: "apa", Claims: []Claim{{Index: 0, Section: 1, Text: "A claim"}, {Index: 1, Section: 2, Text: "Unmatched claim"}}},
 		[]ResultInput{{Publication: samplePub("10.3/y", "Claim paper"), ClaimIndex: 0, Claim: "A claim", Rationale: "fits"}})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if srch, _ := s.GetSearch(ctx, id); len(srch.Claims) != 2 || srch.Claims[1].Text != "Unmatched claim" {
+		t.Fatalf("claims not persisted: %+v", srch.Claims)
 	}
 	res, _ := s.ListResults(ctx, id)
 	if err := s.SetApproval(ctx, res[0].ID, 1); err != nil {
