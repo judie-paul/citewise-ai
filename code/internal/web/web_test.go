@@ -127,9 +127,15 @@ func TestPagesRender(t *testing.T) {
 			t.Errorf("%s: missing CSP header", path)
 		}
 	}
-	if rec := e.do(t, http.MethodGet, "/references/upload", nil, ""); !strings.Contains(rec.Body.String(), "requires an OpenAI API key") &&
-		!strings.Contains(rec.Body.String(), "needs an OpenAI API key") {
-		t.Error("upload page should explain the API key requirement")
+	// Visitors are told to ask the host; host-only setup details are not shown.
+	for _, path := range []string{"/", "/references/search", "/references/upload"} {
+		body := e.do(t, http.MethodGet, path, nil, "").Body.String()
+		if strings.Contains(body, "OPENAI_API_KEY") || strings.Contains(body, ".env") {
+			t.Errorf("%s shows host-only configuration details to visitors", path)
+		}
+	}
+	if body := e.do(t, http.MethodGet, "/references/upload", nil, "").Body.String(); !strings.Contains(body, "host to add an OpenAI API key") {
+		t.Error("upload page should tell visitors to ask the host for an API key")
 	}
 	if rec := e.do(t, http.MethodGet, "/nope", nil, ""); rec.Code != http.StatusNotFound {
 		t.Errorf("unknown path: %d", rec.Code)
@@ -321,8 +327,11 @@ func TestUploadRequiresAI(t *testing.T) {
 	e := newEnv(t, "")
 	body, ct := multipartBody(t, "essay.txt", []byte(essayText), map[string]string{"style": "apa"})
 	rec := e.do(t, http.MethodPost, "/references/upload", body, ct)
-	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "requires an OpenAI API key") {
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "isn&#39;t enabled on this server") {
 		t.Fatalf("upload without AI: %d", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), "OPENAI_API_KEY") {
+		t.Fatal("visitor-facing error exposes host configuration details")
 	}
 }
 
@@ -411,11 +420,11 @@ func TestUploadErrors(t *testing.T) {
 	e.essays.err = errors.Join(ai.ErrUnavailable, errors.New("OpenAI rejected the API key (HTTP 401)"))
 	body, ct := multipartBody(t, "essay.txt", []byte(essayText), map[string]string{"style": "apa"})
 	rec := e.do(t, http.MethodPost, "/references/upload", body, ct)
-	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "AI essay analysis failed") {
+	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "let the site&#39;s host know") {
 		t.Fatalf("AI failure: %d", rec.Code)
 	}
-	if strings.Contains(rec.Body.String(), "test-key") {
-		t.Fatal("API key leaked into page")
+	if strings.Contains(rec.Body.String(), "test-key") || strings.Contains(rec.Body.String(), "HTTP 401") {
+		t.Fatal("AI failure details leaked to the visitor")
 	}
 	if entries, _ := os.ReadDir(e.tempDir); len(entries) != 0 {
 		t.Fatalf("temporary files left behind after errors: %d", len(entries))

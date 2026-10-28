@@ -13,7 +13,7 @@
   <section class="card">
     <h2>Upload an existing essay</h2>
     <p>Upload a PDF, DOCX or TXT essay. CiteWise picks out its key claims and suggests sources for each one, which you can approve or reject.</p>
-    {{if not .AIEnabled}}<p class="notice notice-warn">Essay analysis needs an OpenAI API key, and none is configured. Title search still works.</p>{{end}}
+    {{if not .AIEnabled}}<p class="notice notice-warn">Essay analysis isn't enabled on this server. Ask the site's host to add an OpenAI API key. Title search still works.</p>{{end}}
     <a class="btn" href="/references/upload">Upload an essay</a>
   </section>
   <section class="card">
