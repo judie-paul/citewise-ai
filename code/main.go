@@ -59,7 +59,7 @@ func run(log *slog.Logger) error {
 		essays = &essay.Service{AI: client, Search: searchSvc, Log: log}
 	}
 
-	srv, err := web.New(web.Options{Config: cfg, Store: db, Searcher: searchSvc, Essays: essays, Logger: log})
+	srv, err := web.New(web.Options{Config: cfg, Store: db, Searcher: searchSvc, Essays: essays, DOI: searchSvc, Logger: log})
 	if err != nil {
 		return err
 	}

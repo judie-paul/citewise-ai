@@ -1,6 +1,6 @@
 # CiteWise AI: Academic Reference Finder
 
-CiteWise AI helps students and teachers find **real** academic references for an essay topic or an existing essay. It searches [Crossref](https://www.crossref.org/) and [OpenAlex](https://openalex.org/), removes duplicate records, ranks results by relevance, and formats citations in **APA 7** or **Harvard** style. It never makes up publications, authors, DOIs or years.
+CiteWise AI helps students and teachers find **real** academic references for an essay topic or an existing essay. It searches [Crossref](https://www.crossref.org/) and [OpenAlex](https://openalex.org/), removes duplicate records, ranks results by relevance, and formats citations in **APA 7** or **Harvard** style. If you already have a source, paste its **DOI** to get a correctly formatted citation straight from the publisher's record. CiteWise never makes up publications, authors, DOIs or years.
 
 ---
 
@@ -18,7 +18,7 @@ CiteWise **runs without any API keys**. Title search works out of the box. Keys 
 |---|---|---|---|
 | `OPENAI_API_KEY` | AI search queries for title search; **essay upload and analysis** | Only for essay upload | Paid, per use |
 | `OPENALEX_API_KEY` | A higher, dedicated OpenAlex request budget | Recommended | Free |
-| `CROSSREF_MAILTO` (an email, not a key) | Crossref's faster "polite" API pool | Recommended | Free |
+| `CROSSREF_MAILTO` (an email, not a key) | Crossref's faster "polite" API pool (used for searches and DOI lookups) | Recommended | Free |
 
 ### OpenAI API key (enables essay analysis)
 
@@ -131,6 +131,26 @@ go run .
 
 Note that `go run` uses `code/` as the working directory, so it reads `code/.env` and creates the database at `code/data/citewise.db`. Run the built executable from the repository root to use the root `.env` and `./data/`.
 
+### Cite by DOI
+
+A **DOI** (Digital Object Identifier) is a permanent ID for a published work, such as `10.1080/09638237.2020.1714007`. You'll usually find it near the title or abstract on an article's web page, or on the first page of its PDF.
+
+To cite a source you already have:
+
+1. Open **Saved references**.
+2. Paste the DOI into **Cite by DOI** and select **Add reference**. Any of these forms works:
+   - `10.1080/09638237.2020.1714007`
+   - `doi:10.1080/09638237.2020.1714007`
+   - `https://doi.org/10.1080/09638237.2020.1714007`
+   - `doi.org/10.1080/09638237.2020.1714007`
+3. CiteWise fetches the record from **Crossref**, or from **OpenAlex** if Crossref doesn't have it. It saves the reference and formats it in your chosen style, ready to copy or export.
+
+Good to know:
+
+- **No key needed.** Cite by DOI works without any API keys.
+- **Real records only.** The citation is built only from the publisher's or database's record for that exact DOI. If neither database has the DOI, CiteWise says so rather than guessing. If a database returns a record listed under a different DOI (OpenAlex sometimes merges preprint and published versions), it's rejected, so the citation always matches the DOI you entered.
+- **No duplicates.** Adding a DOI that's already saved, or one that appeared in an earlier search, reuses the existing record.
+
 ### Pages and routes
 
 | Route | Purpose |
@@ -139,8 +159,9 @@ Note that `go run` uses `code/` as the working directory, so it reads `code/.env
 | `GET/POST /references/search` | Title or topic search form, and running the search |
 | `GET/POST /references/upload` | Essay upload form, and running the analysis |
 | `GET /references/results/{id}` | Saved search results (`?style=apa` or `?style=harvard` switches style without searching again) |
-| `GET /references/saved` | Saved references and previous searches |
+| `GET /references/saved` | Saved references, the **Cite by DOI** form, and previous searches |
 | `POST /references/save` | Save, remove, approve or reject a reference |
+| `POST /references/doi` | Look up a DOI and add it to saved references |
 | `POST /references/export` | Download selected references as TXT or BibTeX |
 | `GET /health` | JSON health check (`{"status":"ok","database":"ok",...}`) |
 
@@ -178,6 +199,7 @@ go build ./...
 
 - **Citation styles:** APA 7th edition and Harvard (Cite Them Right conventions). Citations are built only from the retrieved metadata. Missing details are left out or shown as `n.d.` / `no date`, never guessed. You can switch styles on any results page or on the saved-references page without searching again.
 - **Upload formats:** PDF (text-based), DOCX and TXT (UTF-8 or UTF-16), up to `MAX_UPLOAD_MB`.
+- **DOI input:** a bare DOI, `doi:` prefix, or `doi.org` link (see [Cite by DOI](#cite-by-doi)).
 - **Export formats:** plain text (alphabetical reference list) and BibTeX (`.bib`).
 
 ## Privacy and storage
@@ -196,6 +218,7 @@ go build ./...
 - Titles are shown exactly as the providers return them. APA's sentence-case rule is not applied automatically, because doing so can break proper nouns.
 - Author names from OpenAlex arrive as a single display name and are split into given and family names by a heuristic, so compound names can occasionally be split wrongly.
 - Provider metadata is sometimes incomplete or inconsistent, for example missing pages or preprint versions. CiteWise shows what exists and does not fill gaps.
+- Cite by DOI only finds DOIs that Crossref or OpenAlex hold under that exact DOI. DOIs registered with DataCite, such as **arXiv preprints** (`10.48550/…`), Zenodo records, many datasets and some theses, are often not found. Use a title search for those.
 - Only APA 7 and Harvard styles, and only TXT and BibTeX exports. DOCX, RIS and other formats are not implemented.
 - There is no authentication or per-user separation, so this is designed for local or single-group use.
 - Essays longer than about 30,000 characters are analysed only up to that point, and the results page notes this.

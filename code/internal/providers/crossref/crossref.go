@@ -3,6 +3,7 @@ package crossref
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -66,7 +67,39 @@ func (c *Client) Search(ctx context.Context, q providers.Query) ([]models.Public
 	endpoint := strings.TrimRight(c.BaseURL, "/") + "/works?" + v.Encode()
 
 	var resp response
-	err := c.http.Do(ctx, func(ctx context.Context) (*http.Request, error) {
+	if err := c.get(ctx, endpoint, &resp); err != nil {
+		return nil, err
+	}
+	return Normalize(resp), nil
+}
+
+// LookupDOI implements providers.DOILookuper using the /works/{doi} endpoint.
+func (c *Client) LookupDOI(ctx context.Context, doi string) (models.Publication, error) {
+	endpoint := strings.TrimRight(c.BaseURL, "/") + "/works/" + url.PathEscape(doi)
+	if c.Mailto != "" {
+		endpoint += "?mailto=" + url.QueryEscape(c.Mailto)
+	}
+	var resp struct {
+		Message item `json:"message"`
+	}
+	if err := c.get(ctx, endpoint, &resp); err != nil {
+		var se *httpx.StatusError
+		if errors.As(err, &se) && se.Code == http.StatusNotFound {
+			return models.Publication{}, providers.ErrNotFound
+		}
+		return models.Publication{}, err
+	}
+	var r response
+	r.Message.Items = []item{resp.Message}
+	pubs := Normalize(r)
+	if len(pubs) == 0 {
+		return models.Publication{}, providers.ErrNotFound // record without a title
+	}
+	return pubs[0], nil
+}
+
+func (c *Client) get(ctx context.Context, endpoint string, out any) error {
+	return c.http.Do(ctx, func(ctx context.Context) (*http.Request, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
 			return nil, err
@@ -78,11 +111,7 @@ func (c *Client) Search(ctx context.Context, q providers.Query) ([]models.Public
 		req.Header.Set("User-Agent", ua)
 		req.Header.Set("Accept", "application/json")
 		return req, nil
-	}, &resp)
-	if err != nil {
-		return nil, err
-	}
-	return Normalize(resp), nil
+	}, out)
 }
 
 type dateParts struct {

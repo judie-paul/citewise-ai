@@ -26,6 +26,11 @@ type Searcher interface {
 	Find(ctx context.Context, req search.Request) (search.Result, error)
 }
 
+// DOIResolver fetches a publication's metadata by DOI.
+type DOIResolver interface {
+	LookupDOI(ctx context.Context, doi string) (models.Publication, error)
+}
+
 // EssayAnalyzer produces citation suggestions for essay text.
 type EssayAnalyzer interface {
 	Analyze(ctx context.Context, text string, yearFrom, yearTo int) (essay.Report, error)
@@ -447,27 +452,104 @@ type savedPage struct {
 	Items    []refItem
 	Searches []store.Search
 	ReturnTo string
+
+	// "Cite by DOI" form state.
+	DOIInput     string
+	DOIError     string
+	Added        *refItem // the reference just added by DOI, if any
+	AlreadySaved bool
 }
 
 func (s *Server) handleSaved(w http.ResponseWriter, r *http.Request) {
+	page := savedPage{Style: s.styleFromQuery(r, "apa")}
+	addedID, _ := strconv.ParseInt(r.URL.Query().Get("added"), 10, 64)
+	page.AlreadySaved = r.URL.Query().Get("already") == "1"
+	s.renderSaved(w, r, http.StatusOK, page, addedID)
+}
+
+// renderSaved fills in the saved references and previous searches and renders
+// the page. addedID highlights a reference that was just added by DOI.
+func (s *Server) renderSaved(w http.ResponseWriter, r *http.Request, status int, page savedPage, addedID int64) {
 	saved, err := s.store.ListSaved(r.Context())
 	if err != nil {
 		s.log.Error("list saved", "err", err)
 		s.renderError(w, http.StatusInternalServerError, "Saved references could not be loaded.", "/")
 		return
 	}
-	searches, err := s.store.ListSearches(r.Context(), 50)
-	if err != nil {
+	if page.Searches, err = s.store.ListSearches(r.Context(), 50); err != nil {
 		s.log.Error("list searches", "err", err)
 	}
-	style := s.styleFromQuery(r, "apa")
-	page := savedPage{Style: style, Searches: searches, ReturnTo: "/references/saved?style=" + string(style)}
+	page.ReturnTo = "/references/saved?style=" + string(page.Style)
 	for _, sr := range saved {
-		it := newRefItem(sr.Publication, style, page.ReturnTo)
+		it := newRefItem(sr.Publication, page.Style, page.ReturnTo)
 		it.Saved = true
 		page.Items = append(page.Items, it)
+		if addedID > 0 && sr.Publication.ID == addedID {
+			added := it
+			page.Added = &added
+		}
 	}
-	s.render(w, http.StatusOK, "saved.html", "Saved references", "saved", page)
+	s.render(w, status, "saved.html", "Saved references", "saved", page)
+}
+
+// handleAddDOI looks up a DOI in Crossref (then OpenAlex), stores the
+// retrieved metadata and saves the reference.
+func (s *Server) handleAddDOI(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
+	if err := r.ParseForm(); err != nil {
+		s.renderError(w, http.StatusBadRequest, "The form could not be read.", "/references/saved")
+		return
+	}
+	style, ok := citation.ParseStyle(r.PostForm.Get("style"))
+	if !ok {
+		style = citation.APA
+	}
+	page := savedPage{Style: style, DOIInput: strings.TrimSpace(r.PostForm.Get("doi"))}
+	fail := func(status int, msg string) {
+		page.DOIError = msg
+		s.renderSaved(w, r, status, page, 0)
+	}
+
+	if page.DOIInput == "" {
+		fail(http.StatusUnprocessableEntity, "Enter a DOI, for example 10.1080/09638237.2020.1714007.")
+		return
+	}
+	doi, ok := models.ParseDOI(page.DOIInput)
+	if !ok {
+		fail(http.StatusUnprocessableEntity, "That doesn't look like a DOI. A DOI starts with “10.” and contains a slash, for example 10.1080/09638237.2020.1714007 or https://doi.org/10.1080/09638237.2020.1714007.")
+		return
+	}
+	if s.doi == nil {
+		fail(http.StatusServiceUnavailable, "Looking up DOIs isn't available on this server.")
+		return
+	}
+
+	pub, err := s.doi.LookupDOI(r.Context(), doi)
+	if err != nil {
+		if r.Context().Err() != nil {
+			return // client went away
+		}
+		switch {
+		case errors.Is(err, search.ErrDOINotFound):
+			fail(http.StatusNotFound, "No publication with the DOI "+doi+" was found in Crossref or OpenAlex. Check it for typos. Some DOIs, such as arXiv preprints, datasets and many theses, aren't listed in either database. For those, try a title search instead.")
+		default:
+			s.log.Error("DOI lookup failed", "err", err)
+			fail(http.StatusBadGateway, "The academic databases (Crossref and OpenAlex) could not be reached. Try again in a moment.")
+		}
+		return
+	}
+
+	id, already, err := s.store.AddReference(r.Context(), pub)
+	if err != nil {
+		s.log.Error("add reference", "err", err)
+		fail(http.StatusInternalServerError, "The reference could not be saved to the database.")
+		return
+	}
+	target := fmt.Sprintf("/references/saved?style=%s&added=%d", style, id)
+	if already {
+		target += "&already=1"
+	}
+	http.Redirect(w, r, target+fmt.Sprintf("#p%d", id), http.StatusSeeOther)
 }
 
 func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
