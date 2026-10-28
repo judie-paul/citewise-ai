@@ -1,7 +1,7 @@
 {{define "content"}}{{with .Page}}
 <h1>Search by essay title</h1>
 <p class="lead">Enter your essay title or research topic. CiteWise will search Crossref and OpenAlex for matching academic publications.</p>
-{{if not $.AIEnabled}}<p class="notice">AI query generation is off because no OpenAI API key is set, so a keyword search is used instead.</p>{{end}}
+{{if not $.AIEnabled}}<p class="notice">AI-assisted search isn't enabled on this server, so a keyword search is used instead. Results are still real publications.</p>{{end}}
 
 {{with .Error}}<div class="notice notice-error" role="alert">{{.}}</div>{{end}}
 {{if .Errors}}<div class="notice notice-error" role="alert">Please correct the highlighted fields below.</div>{{end}}

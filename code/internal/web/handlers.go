@@ -36,6 +36,9 @@ const (
 	maxExportRefs = 500
 )
 
+// msgAINotEnabled is shown to visitors; only the site's host can add a key.
+const msgAINotEnabled = "Essay analysis isn't enabled on this server. Ask the site's host to add an OpenAI API key. In the meantime, title search works without one."
+
 var templateFuncs = template.FuncMap{
 	"add":   func(a, b int) int { return a + b },
 	"lines": func(s string) []string { return strings.FieldsFunc(s, func(r rune) bool { return r == '\n' }) },
@@ -176,7 +179,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		s.render(w, status, "upload.html", "Upload an essay", "upload", form)
 	}
 	if !s.cfg.AIEnabled() || s.essays == nil {
-		fail(http.StatusServiceUnavailable, "AI-assisted essay analysis requires an OpenAI API key. Ask the administrator to set OPENAI_API_KEY, or use title search, which works without one.")
+		fail(http.StatusServiceUnavailable, msgAINotEnabled)
 		return
 	}
 
@@ -266,9 +269,11 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		var msg string
 		switch {
 		case errors.Is(err, essay.ErrAINotConfigured):
-			msg = essay.ErrAINotConfigured.Error() + "."
+			msg = msgAINotEnabled
 		case errors.Is(err, ai.ErrUnavailable):
-			msg = "AI essay analysis failed: " + err.Error() + ". Title search still works without AI."
+			// The detailed cause (bad key, quota, model) is in the server log
+			// for the host; visitors get a message they can act on.
+			msg = "AI essay analysis is temporarily unavailable on this server. Please try again later, and if it keeps happening, let the site's host know. Title search still works."
 		case errors.Is(err, search.ErrProvidersUnavailable):
 			msg = "The academic databases (Crossref and OpenAlex) could not be reached. Try again in a moment."
 		default:
