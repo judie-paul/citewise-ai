@@ -2,50 +2,48 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project status
+## Project
 
-CiteWise AI is an academic reference finder for students and teachers. At the time of writing, the repo holds only `PROMPT.MD`, the full requirements. It has no code yet and is not a git repository. `PROMPT.MD` refers to a `CITEWISE_SPEC.md` that does not exist. Treat `PROMPT.MD` as the spec, and read it in full before you start a milestone. Update this file once real code and commands exist.
+CiteWise AI is a single Go web server that finds real academic references (Crossref and OpenAlex) for an essay title or an uploaded essay, and formats them as APA 7 or Harvard. The full requirements are in `CITEWISE_SPEC.MD`, and the user-facing docs are in `README.md`.
 
-## Hard constraints (from PROMPT.MD)
-
-- **Stack:** Go, `net/http` for routing, and `html/template` for all HTML. The frontend uses plain CSS and minimal vanilla JS. SQLite is the only database; use a pure-Go driver such as `modernc.org/sqlite`. The whole app runs as one Go server.
-- **Forbidden:** React, Node.js, npm, any frontend build step, and any database other than SQLite.
-- **No fabricated bibliographic data.** Titles, authors, years, venues, and DOIs must come from Crossref or OpenAlex records. OpenAI may only generate queries, analyze essays, and assess relevance. Never pad results to reach the requested count. If nothing suitable is found, show an honest message.
-- **Citation styles:** APA 7 and Harvard only. Format citations from stored metadata so users can switch styles without searching again. When metadata is missing, leave it out instead of inventing it.
-- **AI is optional.** Title search must work without `OPENAI_API_KEY`, using a keyword-based query fallback. Essay analysis needs the key, and the UI must say so.
-- **Uploaded essays are untrusted input.** Guard against prompt injection in AI calls. Process uploads in temp files and always clean them up. Never persist essay files or extracted text. Accepted formats are PDF, DOCX, and TXT, with type and size validated. No OCR.
-- **Outbound calls:** use timeouts, context cancellation, and basic retries. Errors shown to users must not expose credentials or stack traces.
-- **No auth.** Saved references are global to the local DB, and the README must say so.
-
-## Intended architecture
-
-- **Provider clients:** separate Crossref and OpenAlex components. Both normalize into one publication model.
-- **Search pipeline:** generate queries (AI or keyword fallback), fan out to both providers, normalize, deduplicate (by DOI first, with a fuzzy title/author/year fallback), rank by keyword relevance, then apply filters (year range, count).
-- **Essay pipeline:** upload, extract text, have AI pick out the topic and claims per section, run targeted searches per claim, then match publications to passages. The user reviews and approves the suggestions.
-- **Persistence:** SQLite at `DATABASE_PATH` (default `./data/citewise.db`), initialized on startup. Tables: `searches`, `documents`, `publications`, `search_results`, `saved_references`. Use foreign keys, indexes, and parameterized SQL only.
-- **Exports:** TXT and BibTeX for selected references.
-- **Routes** (Go 1.22+ method/path patterns): `GET /`, `GET|POST /references/search`, `GET|POST /references/upload`, `GET /references/results/{id}`, `GET /references/saved`, `POST /references/save` (save or remove), `POST /references/export`, `GET /health`.
-
-## Configuration
-
-Commit `.env.example` with these keys: `OPENAI_API_KEY`, `OPENAI_MODEL`, `PORT=8080`, `DATABASE_PATH=./data/citewise.db`, `MAX_UPLOAD_MB=10`, `TEMP_DIR`, `CROSSREF_MAILTO`, `OPENALEX_API_KEY`. Never commit `.env`, `data/`, or uploaded files.
+**Layout:** the Go module (`module citewise`, Go 1.26+) lives in `code/`. Executables go in `build/`; the folder is kept in Git through `.gitkeep`, but the binaries are git-ignored. Run Go commands from `code/`, or use `go -C code ...`.
 
 ## Commands
 
 ```bash
-go run .                      # or ./cmd/... depending on final layout
-go test ./...
-go test ./internal/<pkg> -run TestName   # single test
+./build.sh [--test]            # or .\build.ps1 [-Test]; builds build/citewise(.exe)
+cd code && go run .            # dev run (reads code/.env, DB at code/data/)
+cd code && go test ./...
+go test ./internal/web -run TestUploadFlow      # single test
 ```
 
-Run all of these before declaring work done, and report the actual output:
+Run this before declaring work done, and report the real output:
 
 ```bash
-gofmt -w . && go mod tidy && go vet ./... && go test ./... && go build ./...
+cd code && gofmt -l . && go mod tidy && go vet ./... && go test ./... && go build ./...
 ```
 
-Tests must use a temporary SQLite DB and mocked HTTP responses (`httptest`). They must never need real API keys or make paid AI calls.
+`go test -race` is unavailable on this machine because CGO is off. Tests must use temp SQLite DBs and `httptest` mocks; never require real API keys.
 
-## Git workflow
+## Architecture
 
-Commit at each verifiable milestone (the suggested list is in PROMPT.MD §9), using conventional-commit prefixes (`chore:`, `feat:`, `test:`). Before each commit: run gofmt, run the relevant tests, inspect the diff, and stage only that milestone's files. Never amend commits and never push without permission. The repo is not initialized yet, so run `git init` first.
+The flow is `main.go` → `web.Server`. The server depends on two interfaces so handlers can be tested with fakes: `web.Searcher` (implemented by `search.Service`) and `web.EssayAnalyzer` (implemented by `essay.Service`). `Essays` is nil when `OPENAI_API_KEY` is unset.
+
+- **Title search** (`internal/search`): build queries (AI via the `QueryGenerator` interface, or the `FallbackQueries` keyword fallback), then `Gather` fans out to every `providers.Provider` concurrently. Next come `Dedupe` (DOI first, then normalized title with a compatible first author and year ±1; Crossref fields win on merge), `FilterYears`, and `Rank` (keyword overlap; drops zero-overlap items). If every provider fails, `Find` returns `ErrProvidersUnavailable`. Partial failures become user-visible warnings.
+- **Essay pipeline** (`internal/essay`): `Split` divides text into sections (at most 12 × 2,500 chars). `ai.AnalyzeEssay` returns the topic and claims. Each claim gets a `Gather`/`Rank` search (3 in parallel). Then `ai.AssessRelevance` picks candidates **by app-assigned integer ID only**, and IDs not offered for that claim are discarded. If the relevance check fails, the top two keyword matches are used instead.
+- **AI** (`internal/ai`): uses raw `net/http` to call Chat Completions in JSON mode. It may only generate queries, analyse essays, and assess relevance; it must never produce bibliographic data. User text is wrapped in tag delimiters, and `fence()` neutralises those tags inside the text. All AI output is clipped and validated.
+- **Providers** (`internal/providers/{crossref,openalex}`): each normalizes into `models.Publication`. `httpx.Client` handles retries (429/5xx), body limits, and **strips URLs from errors** because the OpenAlex URL carries `api_key`.
+- **Citations** (`internal/citation`): `Format` returns segments (plain or italic) rendered by `.Text()` or `.HTML()` (escaped). Style is chosen at render time (`?style=`), so persisted results never store formatted citations.
+- **Store** (`internal/store`): the schema lives in a `const` and is applied with `CREATE TABLE IF NOT EXISTS` on startup. There is no migration system, so new columns need a migration once real databases exist. Publications are upserted on `DedupKey`. `search_results.claim_index` is -1 for title searches. `searches.claims_json` keeps the AI's claim paraphrases so claims with no matches still show up.
+- **Web** (`internal/web`): Go 1.22+ `ServeMux` method patterns. Templates are embedded: each page is parsed together with `layout.html`, which also defines the shared partials `ref`, `export-bar` and `style-switch`. Export checkboxes use `form="export-form"` to avoid nested forms. The CSP forbids inline scripts and styles (no `style=` attributes or inline `<script>`). POSTs are checked for same origin, and redirects go through `safeReturn`.
+
+## Invariants (from the spec)
+
+- Never fabricate publications, authors, DOIs or years, and never pad results to reach the requested count. Show an honest empty or short-result message instead.
+- Do not persist essay files or extracted text. Uploads go through `extract.Process`, which always deletes its temp file.
+- Allowed stack: Go stdlib `net/http` + `html/template`, plain CSS, minimal vanilla JS, SQLite (pure Go). No Node, npm, frontend frameworks, or other databases.
+- Errors shown to users must not expose keys or stack traces. `extract.UserError` messages are safe to show verbatim.
+
+## Git
+
+Use conventional commits (`feat:`, `chore:`, `test:`). Run gofmt and tests before committing, stage only the files for that milestone, never amend, and never push without permission. `.gitattributes` forces LF line endings, so `gofmt` stays clean on Windows.
