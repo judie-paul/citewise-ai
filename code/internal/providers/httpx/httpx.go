@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -84,7 +85,12 @@ func (c *Client) Do(ctx context.Context, newReq func(context.Context) (*http.Req
 func (c *Client) once(req *http.Request, out any) (retry bool, err error) {
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		// Network errors are retryable unless the context ended.
+		// Network errors are retryable unless the context ended. The URL is
+		// dropped from the error because it may contain an API key.
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			err = ue.Err
+		}
 		return !errors.Is(err, context.Canceled), fmt.Errorf("%s request failed: %w", c.Service, err)
 	}
 	defer resp.Body.Close()
