@@ -2,6 +2,7 @@ package crossref
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -119,5 +120,36 @@ func TestSearchHonoursCancellation(t *testing.T) {
 	defer cancel()
 	if _, err := newTestClient(srv.URL).Search(ctx, providers.Query{Text: "x"}); err == nil {
 		t.Fatal("expected cancellation error")
+	}
+}
+
+func TestLookupDOI(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		if strings.Contains(gotPath, "missing") {
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte("Resource not found."))
+			return
+		}
+		w.Write([]byte(`{"status":"ok","message":{"DOI":"10.1111/JCPP.1","title":["Social media and teens"],
+			"author":[{"given":"Jane","family":"Doe"}],"issued":{"date-parts":[[2021]]},
+			"container-title":["Journal of Child Psychology"],"type":"journal-article"}}`))
+	}))
+	defer srv.Close()
+	c := newTestClient(srv.URL)
+
+	p, err := c.LookupDOI(context.Background(), "10.1111/jcpp.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/works/10.1111%2Fjcpp.1" {
+		t.Fatalf("DOI not path-escaped: %q", gotPath)
+	}
+	if p.DOI != "10.1111/jcpp.1" || p.Title != "Social media and teens" || p.Year != 2021 || p.Authors[0].Family != "Doe" {
+		t.Fatalf("bad publication: %+v", p)
+	}
+	if _, err := c.LookupDOI(context.Background(), "10.1/missing"); !errors.Is(err, providers.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }

@@ -58,6 +58,7 @@ type env struct {
 	tempDir string
 	search  *fakeSearcher
 	essays  *fakeEssays
+	doi     *fakeDOI
 }
 
 func newEnv(t *testing.T, aiKey string) *env {
@@ -71,9 +72,9 @@ func newEnv(t *testing.T, aiKey string) *env {
 	t.Cleanup(func() { st.Close() })
 	tempDir := filepath.Join(dir, "uploads")
 	os.MkdirAll(tempDir, 0o755)
-	e := &env{store: st, dbPath: dbPath, tempDir: tempDir, search: &fakeSearcher{res: searchResult()}, essays: &fakeEssays{}}
+	e := &env{store: st, dbPath: dbPath, tempDir: tempDir, search: &fakeSearcher{res: searchResult()}, essays: &fakeEssays{}, doi: &fakeDOI{}}
 	cfg := config.Config{OpenAIKey: aiKey, MaxUploadMB: 1, TempDir: tempDir, Port: "8080"}
-	opts := Options{Config: cfg, Store: st, Searcher: e.search, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	opts := Options{Config: cfg, Store: st, Searcher: e.search, DOI: e.doi, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	if aiKey != "" {
 		opts.Essays = e.essays
 	}
@@ -470,3 +471,96 @@ func assertNotInDB(t *testing.T, path, needle string) {
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
+
+type fakeDOI struct {
+	pub models.Publication
+	err error
+	got string
+}
+
+func (f *fakeDOI) LookupDOI(_ context.Context, doi string) (models.Publication, error) {
+	f.got = doi
+	return f.pub, f.err
+}
+
+func TestAddByDOI(t *testing.T) {
+	e := newEnv(t, "")
+	e.doi.pub = models.Publication{DOI: "10.1080/09638237.2020.1714007", Title: "Social media and adolescent mental health",
+		Authors: []models.Author{{Given: "Michelle", Family: "O'Reilly"}}, Year: 2020, Venue: "Journal of Mental Health",
+		Volume: "29", Issue: "2", Pages: "200-206", Type: "journal-article", Source: "crossref"}
+
+	rec := e.postForm(t, "/references/doi", url.Values{"doi": {" https://doi.org/10.1080/09638237.2020.1714007 "}, "style": {"harvard"}})
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("add: %d %s", rec.Code, rec.Body.String())
+	}
+	if e.doi.got != "10.1080/09638237.2020.1714007" {
+		t.Fatalf("resolver got %q, want normalized DOI", e.doi.got)
+	}
+	loc := rec.Header().Get("Location")
+	if !strings.HasPrefix(loc, "/references/saved?style=harvard&added=") || strings.Contains(loc, "already") {
+		t.Fatalf("location %q", loc)
+	}
+	saved, _ := e.store.ListSaved(context.Background())
+	if id := itoa(saved[0].Publication.ID); !strings.HasSuffix(loc, "added="+id+"#p"+id) {
+		t.Errorf("location %q should identify and anchor to the added reference", loc)
+	}
+	page := e.do(t, http.MethodGet, browserURL(loc), nil, "").Body.String()
+	for _, want := range []string{"Added to your saved references", "O&#39;Reilly, M. (2020) ‘Social media and adolescent mental health’", "pp. 200–206"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("saved page missing %q", want)
+		}
+	}
+
+	// Adding the same DOI again does not duplicate it.
+	rec = e.postForm(t, "/references/doi", url.Values{"doi": {"10.1080/09638237.2020.1714007"}, "style": {"apa"}})
+	if loc := rec.Header().Get("Location"); !strings.Contains(loc, "already=1") {
+		t.Fatalf("second add location %q", loc)
+	}
+	page = e.do(t, http.MethodGet, browserURL(rec.Header().Get("Location")), nil, "").Body.String()
+	if !strings.Contains(page, "already in your saved references") {
+		t.Error("expected already-saved notice")
+	}
+	if saved, _ := e.store.ListSaved(context.Background()); len(saved) != 1 {
+		t.Fatalf("expected 1 saved reference, got %d", len(saved))
+	}
+}
+
+func TestAddByDOIErrors(t *testing.T) {
+	e := newEnv(t, "")
+	cases := []struct {
+		name   string
+		input  string
+		err    error
+		status int
+		want   string
+	}{
+		{"empty", "", nil, http.StatusUnprocessableEntity, "Enter a DOI"},
+		{"not a doi", "the great gatsby", nil, http.StatusUnprocessableEntity, "look like a DOI"},
+		{"unknown", "10.1000/missing", search.ErrDOINotFound, http.StatusNotFound, "No publication with the DOI 10.1000/missing"},
+		{"providers down", "10.1000/abc", search.ErrProvidersUnavailable, http.StatusBadGateway, "could not be reached"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			e.doi.err = c.err
+			rec := e.postForm(t, "/references/doi", url.Values{"doi": {c.input}, "style": {"apa"}})
+			body := rec.Body.String()
+			if rec.Code != c.status || !strings.Contains(body, c.want) {
+				t.Fatalf("status %d, body missing %q", rec.Code, c.want)
+			}
+			if c.input != "" && !strings.Contains(body, `value="`+c.input+`"`) {
+				t.Error("entered DOI should be kept in the form")
+			}
+		})
+	}
+	if saved, _ := e.store.ListSaved(context.Background()); len(saved) != 0 {
+		t.Fatal("failed lookups must not save anything")
+	}
+}
+
+// browserURL drops the #fragment, which browsers never send to the server.
+func browserURL(loc string) string {
+	if i := strings.Index(loc, "#"); i >= 0 {
+		return loc[:i]
+	}
+	return loc
+}

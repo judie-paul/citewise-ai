@@ -3,6 +3,7 @@ package openalex
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -18,6 +19,9 @@ import (
 
 // DefaultBaseURL is the public OpenAlex API.
 const DefaultBaseURL = "https://api.openalex.org"
+
+// workFields are the work fields requested from OpenAlex.
+const workFields = "id,doi,title,display_name,publication_year,authorships,primary_location,abstract_inverted_index,type,biblio"
 
 // Client queries OpenAlex.
 type Client struct {
@@ -44,7 +48,7 @@ func (c *Client) Search(ctx context.Context, q providers.Query) ([]models.Public
 	v := url.Values{}
 	v.Set("search", q.Text)
 	v.Set("per-page", strconv.Itoa(rows))
-	v.Set("select", "id,doi,title,display_name,publication_year,authorships,primary_location,abstract_inverted_index,type,biblio")
+	v.Set("select", workFields)
 	filters := []string{"type:article|book|book-chapter|review|preprint|dissertation|report"}
 	switch {
 	case q.YearFrom > 0 && q.YearTo > 0:
@@ -64,7 +68,41 @@ func (c *Client) Search(ctx context.Context, q providers.Query) ([]models.Public
 	endpoint := strings.TrimRight(c.BaseURL, "/") + "/works?" + v.Encode()
 
 	var resp response
-	err := c.http.Do(ctx, func(ctx context.Context) (*http.Request, error) {
+	if err := c.get(ctx, endpoint, &resp); err != nil {
+		return nil, err
+	}
+	return Normalize(resp), nil
+}
+
+// LookupDOI implements providers.DOILookuper using the /works/doi:{doi}
+// endpoint.
+func (c *Client) LookupDOI(ctx context.Context, doi string) (models.Publication, error) {
+	v := url.Values{}
+	v.Set("select", workFields)
+	if c.APIKey != "" {
+		v.Set("api_key", c.APIKey)
+	}
+	if c.Mailto != "" {
+		v.Set("mailto", c.Mailto)
+	}
+	endpoint := strings.TrimRight(c.BaseURL, "/") + "/works/doi:" + url.PathEscape(doi) + "?" + v.Encode()
+	var w work
+	if err := c.get(ctx, endpoint, &w); err != nil {
+		var se *httpx.StatusError
+		if errors.As(err, &se) && se.Code == http.StatusNotFound {
+			return models.Publication{}, providers.ErrNotFound
+		}
+		return models.Publication{}, err
+	}
+	pubs := Normalize(response{Results: []work{w}})
+	if len(pubs) == 0 {
+		return models.Publication{}, providers.ErrNotFound // record without a title
+	}
+	return pubs[0], nil
+}
+
+func (c *Client) get(ctx context.Context, endpoint string, out any) error {
+	return c.http.Do(ctx, func(ctx context.Context) (*http.Request, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
 			return nil, err
@@ -72,11 +110,7 @@ func (c *Client) Search(ctx context.Context, q providers.Query) ([]models.Public
 		req.Header.Set("User-Agent", "CiteWiseAI/1.0")
 		req.Header.Set("Accept", "application/json")
 		return req, nil
-	}, &resp)
-	if err != nil {
-		return nil, err
-	}
-	return Normalize(resp), nil
+	}, out)
 }
 
 type work struct {

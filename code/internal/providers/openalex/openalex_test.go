@@ -2,6 +2,7 @@ package openalex
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -80,5 +81,36 @@ func TestYearFilterOpenRanges(t *testing.T) {
 	c.Search(context.Background(), providers.Query{Text: "x", YearTo: 2000})
 	if !strings.Contains(gotQuery, "publication_year:<2001") {
 		t.Fatalf("filter = %q", gotQuery)
+	}
+}
+
+func TestLookupDOI(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		if strings.Contains(gotPath, "missing") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Write([]byte(`{"id":"https://openalex.org/W9","doi":"https://doi.org/10.5281/zenodo.42","title":"A dataset paper",
+			"publication_year":2022,"type":"report","authorships":[{"author":{"display_name":"Ada Lovelace"}}]}`))
+	}))
+	defer srv.Close()
+	c := New("", "")
+	c.BaseURL = srv.URL
+	c.http.Backoff = time.Millisecond
+
+	p, err := c.LookupDOI(context.Background(), "10.5281/zenodo.42")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/works/doi:10.5281%2Fzenodo.42" {
+		t.Fatalf("DOI not path-escaped: %q", gotPath)
+	}
+	if p.DOI != "10.5281/zenodo.42" || p.Title != "A dataset paper" || p.Authors[0].Family != "Lovelace" {
+		t.Fatalf("bad publication: %+v", p)
+	}
+	if _, err := c.LookupDOI(context.Background(), "10.1/missing"); !errors.Is(err, providers.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }

@@ -148,6 +148,45 @@ func (s *Service) Find(ctx context.Context, req Request) (Result, error) {
 	return res, nil
 }
 
+// ErrDOINotFound means no provider has a record for the DOI.
+var ErrDOINotFound = errors.New("no publication found for this DOI")
+
+// LookupDOI fetches a publication by DOI, trying each provider that
+// supports lookups in order (Crossref first, then OpenAlex). It returns
+// ErrDOINotFound only when every provider answered that the DOI is unknown;
+// if any provider could not be reached, it returns ErrProvidersUnavailable.
+func (s *Service) LookupDOI(ctx context.Context, doi string) (models.Publication, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	failed := false
+	for _, p := range s.Providers {
+		l, ok := p.(providers.DOILookuper)
+		if !ok {
+			continue
+		}
+		pub, err := l.LookupDOI(ctx, doi)
+		if err == nil {
+			// Providers can return a merged record whose DOI belongs to a
+			// different version of the work (OpenAlex does this for some
+			// preprints). Its metadata would not describe the DOI the user
+			// asked for, so it is treated as not found.
+			if models.NormalizeDOI(pub.DOI) == doi {
+				return pub, nil
+			}
+			s.logger().Info("DOI lookup returned a different DOI; ignoring", "provider", p.Name(), "requested", doi, "returned", pub.DOI)
+			continue
+		}
+		if !errors.Is(err, providers.ErrNotFound) {
+			s.logger().Warn("DOI lookup failed", "provider", p.Name(), "err", err)
+			failed = true
+		}
+	}
+	if failed {
+		return models.Publication{}, ErrProvidersUnavailable
+	}
+	return models.Publication{}, ErrDOINotFound
+}
+
 func (s *Service) logger() *slog.Logger {
 	if s.Log != nil {
 		return s.Log

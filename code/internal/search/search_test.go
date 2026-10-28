@@ -194,3 +194,48 @@ func TestFindNoResultsIsNotAnError(t *testing.T) {
 		t.Fatalf("err=%v items=%d", err, len(res.Items))
 	}
 }
+
+type lookupProvider struct {
+	fakeProvider
+	pub models.Publication
+	err error
+}
+
+func (l *lookupProvider) LookupDOI(context.Context, string) (models.Publication, error) {
+	return l.pub, l.err
+}
+
+func TestLookupDOI(t *testing.T) {
+	found := models.Publication{DOI: "10.5281/zenodo.42", Title: "Found in OpenAlex"}
+	notFound := &lookupProvider{fakeProvider: fakeProvider{name: "crossref"}, err: providers.ErrNotFound}
+	down := &lookupProvider{fakeProvider: fakeProvider{name: "crossref"}, err: errors.New("timeout")}
+	hit := &lookupProvider{fakeProvider: fakeProvider{name: "openalex"}, pub: found}
+	miss := &lookupProvider{fakeProvider: fakeProvider{name: "openalex"}, err: providers.ErrNotFound}
+	searchOnly := &fakeProvider{name: "other"}
+	mismatch := &lookupProvider{fakeProvider: fakeProvider{name: "openalex"}, pub: models.Publication{DOI: "10.65215/other-version", Title: "Merged record"}}
+
+	cases := []struct {
+		name  string
+		provs []providers.Provider
+		want  error
+	}{
+		{"falls back to second provider", []providers.Provider{searchOnly, notFound, hit}, nil},
+		{"second provider succeeds after failure", []providers.Provider{down, hit}, nil},
+		{"all say not found", []providers.Provider{notFound, miss}, ErrDOINotFound},
+		{"one down, other not found", []providers.Provider{down, miss}, ErrProvidersUnavailable},
+		{"no lookup providers", []providers.Provider{searchOnly}, ErrDOINotFound},
+		{"record with a different DOI is rejected", []providers.Provider{notFound, mismatch}, ErrDOINotFound},
+		{"DOI comparison ignores case and prefix", []providers.Provider{&lookupProvider{fakeProvider: fakeProvider{name: "crossref"}, pub: models.Publication{DOI: "https://doi.org/10.5281/ZENODO.42", Title: "Found in OpenAlex"}}}, nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			pub, err := (&Service{Providers: c.provs}).LookupDOI(context.Background(), "10.5281/zenodo.42")
+			if !errors.Is(err, c.want) {
+				t.Fatalf("err = %v, want %v", err, c.want)
+			}
+			if c.want == nil && pub.Title != "Found in OpenAlex" {
+				t.Fatalf("pub = %+v", pub)
+			}
+		})
+	}
+}

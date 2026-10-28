@@ -1,6 +1,24 @@
 {{define "content"}}{{with .Page}}
 <h1>Saved references</h1>
 <p class="lead">Your saved references are stored in this application's local database. There are no user accounts, so everyone using this installation sees the same list.</p>
+
+<section class="doi-box" aria-labelledby="doi-heading">
+  <h2 id="doi-heading">Cite by DOI</h2>
+  <p class="help" id="doi-help">Already have a source? Paste its DOI (for example <code>10.1080/09638237.2020.1714007</code> or a <code>https://doi.org/…</code> link). CiteWise fetches the publisher's record and adds a formatted citation to your saved references.</p>
+  {{with .DOIError}}<p class="notice notice-error" role="alert" id="doi-error">{{.}}</p>{{end}}
+  <form method="post" action="/references/doi" class="doi-form">
+    <input type="hidden" name="style" value="{{.Style}}">
+    <label for="doi" class="visually-hidden">DOI</label>
+    <input type="text" id="doi" name="doi" value="{{.DOIInput}}" required maxlength="400" autocomplete="off" spellcheck="false"
+      placeholder="10.xxxx/xxxxx" aria-describedby="doi-help{{if .DOIError}} doi-error{{end}}"{{if .DOIError}} aria-invalid="true"{{end}}>
+    <button type="submit" class="btn" data-busy-text="Looking up…">Add reference</button>
+  </form>
+</section>
+
+{{with .Added}}
+<p class="notice" role="status">{{if $.Page.AlreadySaved}}This reference was already in your saved references:{{else}}Added to your saved references:{{end}} <a href="#{{.Key}}">{{.Pub.Title}}</a></p>
+{{end}}
+
 {{template "style-switch" (styleNav "/references/saved" .Style)}}
 
 {{if .Items}}

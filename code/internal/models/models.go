@@ -3,6 +3,7 @@
 package models
 
 import (
+	"net/url"
 	"regexp"
 	"strings"
 	"unicode"
@@ -63,7 +64,28 @@ func (p Publication) Link() string {
 	return p.URL
 }
 
-var doiPrefix = regexp.MustCompile(`(?i)^(https?://(dx\.)?doi\.org/|doi:\s*)`)
+var doiPrefix = regexp.MustCompile(`(?i)^((https?://)?(dx\.)?doi\.org/|doi:\s*)`)
+
+// doiPattern matches a DOI: "10.", a numeric registrant code, "/", a suffix.
+var doiPattern = regexp.MustCompile(`^10\.\d{4,9}(\.\d+)*/\S+$`)
+
+// ParseDOI extracts a normalized DOI from user input such as
+// "10.1000/xyz", "doi:10.1000/xyz" or "https://doi.org/10.1000/xyz".
+// It returns ok=false if the input is not a DOI.
+func ParseDOI(input string) (string, bool) {
+	s := strings.TrimSpace(input)
+	if strings.Contains(s, "%") {
+		if u, err := url.PathUnescape(s); err == nil {
+			s = u
+		}
+	}
+	s = strings.TrimRight(s, ".,;")
+	doi := NormalizeDOI(s)
+	if doi == "" || len(doi) > 300 || !doiPattern.MatchString(doi) {
+		return "", false
+	}
+	return doi, true
+}
 
 // NormalizeDOI lowercases a DOI and strips URL or "doi:" prefixes.
 func NormalizeDOI(doi string) string {

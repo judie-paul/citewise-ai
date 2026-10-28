@@ -404,6 +404,30 @@ func (s *Store) SaveReference(ctx context.Context, publicationID int64) error {
 	return err
 }
 
+// AddReference stores a publication (merging with any existing record for
+// the same work) and saves it. It returns the publication ID and whether it
+// was already saved.
+func (s *Store) AddReference(ctx context.Context, p models.Publication) (id int64, alreadySaved bool, err error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, false, err
+	}
+	defer tx.Rollback()
+	if id, err = upsertPublication(ctx, tx, p); err != nil {
+		return 0, false, err
+	}
+	res, err := tx.ExecContext(ctx, `INSERT INTO saved_references (publication_id, created_at) VALUES (?, ?)
+		ON CONFLICT(publication_id) DO NOTHING`, id, now())
+	if err != nil {
+		return 0, false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, false, err
+	}
+	return id, n == 0, tx.Commit()
+}
+
 // RemoveReference removes a publication from the saved references.
 func (s *Store) RemoveReference(ctx context.Context, publicationID int64) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM saved_references WHERE publication_id = ?`, publicationID)

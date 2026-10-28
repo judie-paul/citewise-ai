@@ -31,6 +31,7 @@ type Server struct {
 	store     *store.Store
 	searcher  Searcher
 	essays    EssayAnalyzer
+	doi       DOIResolver
 	log       *slog.Logger
 	pages     map[string]*template.Template
 	currentYr int
@@ -42,6 +43,7 @@ type Options struct {
 	Store    *store.Store
 	Searcher Searcher
 	Essays   EssayAnalyzer
+	DOI      DOIResolver
 	Logger   *slog.Logger
 }
 
@@ -55,6 +57,7 @@ func New(opts Options) (*Server, error) {
 		store:     opts.Store,
 		searcher:  opts.Searcher,
 		essays:    opts.Essays,
+		doi:       opts.DOI,
 		log:       opts.Logger,
 		pages:     map[string]*template.Template{},
 		currentYr: time.Now().Year(),
@@ -92,6 +95,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /references/results/{id}", s.handleResults)
 	mux.HandleFunc("GET /references/saved", s.handleSaved)
 	mux.HandleFunc("POST /references/save", s.handleSave)
+	mux.HandleFunc("POST /references/doi", s.handleAddDOI)
 	mux.HandleFunc("POST /references/export", s.handleExport)
 	mux.HandleFunc("/", s.handleNotFound)
 

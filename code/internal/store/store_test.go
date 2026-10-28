@@ -167,3 +167,30 @@ func TestApprovalAndDocuments(t *testing.T) {
 		t.Fatal("expected CHECK constraint failure for invalid status")
 	}
 }
+
+func TestAddReference(t *testing.T) {
+	s := openTemp(t)
+	ctx := context.Background()
+	// A publication first seen in a search...
+	srchID, err := s.SaveSearch(ctx, Search{Topic: "t", Type: "title", Style: "apa"},
+		[]ResultInput{{Publication: samplePub("10.4/z", "From search"), ClaimIndex: -1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, _ := s.ListResults(ctx, srchID)
+
+	// ...then added by DOI reuses the same record rather than duplicating it.
+	id, already, err := s.AddReference(ctx, samplePub("https://doi.org/10.4/Z", "From search"))
+	if err != nil || already || id != res[0].Publication.ID {
+		t.Fatalf("AddReference: id=%d already=%v err=%v (want id %d)", id, already, err, res[0].Publication.ID)
+	}
+	if _, already, _ := s.AddReference(ctx, samplePub("10.4/z", "From search")); !already {
+		t.Fatal("second add should report already saved")
+	}
+	if saved, _ := s.ListSaved(ctx); len(saved) != 1 {
+		t.Fatalf("expected 1 saved reference, got %d", len(saved))
+	}
+	if _, _, err := s.AddReference(ctx, models.Publication{DOI: "10.4/untitled"}); err == nil {
+		t.Fatal("publication without a title must be rejected")
+	}
+}
