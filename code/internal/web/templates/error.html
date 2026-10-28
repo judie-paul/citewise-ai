@@ -1,0 +1,7 @@
+{{define "content"}}{{with .Page}}
+<section class="error-page">
+  <h1>{{$.Title}}</h1>
+  <p class="notice notice-error" role="alert">{{.Message}}</p>
+  <p><a class="btn" href="{{.Back}}">Go back</a> <a class="btn btn-secondary" href="/">Home</a></p>
+</section>
+{{end}}{{end}}

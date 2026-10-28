@@ -1,0 +1,47 @@
+{{define "content"}}{{with .Page}}
+<header class="results-head">
+  <p class="eyebrow">{{if eq .Search.Type "essay"}}Essay citation suggestions{{else}}Title search results{{end}}</p>
+  <h1>{{.Search.Topic}}</h1>
+  <dl class="meta">
+    <div><dt>Searched</dt><dd>{{date .Search.CreatedAt}}</dd></div>
+    {{if eq .Search.Type "title"}}<div><dt>Found</dt><dd>{{.Found}} of {{.Search.RequestedCount}} requested</dd></div>{{end}}
+    {{if or .Search.YearFrom .Search.YearTo}}<div><dt>Years</dt><dd>{{if .Search.YearFrom}}{{.Search.YearFrom}}{{else}}any{{end}} – {{if .Search.YearTo}}{{.Search.YearTo}}{{else}}any{{end}}</dd></div>{{end}}
+    <div><dt>Queries</dt><dd>{{join .Search.Queries "; "}}{{if .Search.AIUsed}} <span class="muted">(AI-assisted)</span>{{else}} <span class="muted">(keyword search)</span>{{end}}</dd></div>
+    {{with .Document}}<div><dt>Essay</dt><dd>{{.Filename}} <span class="muted">(the file and its text were not stored)</span></dd></div>{{end}}
+  </dl>
+  {{range lines .Search.Notice}}<p class="notice notice-warn">{{.}}</p>{{end}}
+  {{template "style-switch" (styleNav .BasePath .Style)}}
+</header>
+
+{{template "export-bar" .}}
+
+{{if eq .Search.Type "essay"}}
+  {{if .Claims}}
+  <p class="help">Each claim from your essay is listed with the publications that may support it. Read a source before you cite it, then approve or reject each suggestion. Approved references are added to your saved references.</p>
+  {{range .Claims}}
+  <section class="claim" aria-labelledby="claim-{{.Index}}">
+    <h2 id="claim-{{.Index}}">Claim {{add .Index 1}}{{if .Section}} <span class="muted">· section {{.Section}} of the essay</span>{{end}}</h2>
+    <blockquote>{{.Claim}}</blockquote>
+    {{if .Items}}
+    <ol class="refs">{{range .Items}}{{template "ref" .}}{{end}}</ol>
+    {{else}}
+    <p class="empty">No suitable publication was found for this claim. CiteWise does not invent references. Try a <a href="/references/search?topic={{.Claim}}">title search</a> with different wording.</p>
+    {{end}}
+  </section>
+  {{end}}
+  {{else}}
+  <p class="empty">No claims needing citations were found in this essay.</p>
+  {{end}}
+{{else}}
+  {{if .Items}}
+  {{if lt .Found .Search.RequestedCount}}<p class="notice">Only {{.Found}} relevant publication{{if ne .Found 1}}s were{{else}} was{{end}} found. CiteWise does not add made-up references to reach the number you asked for.</p>{{end}}
+  <ol class="refs">{{range .Items}}{{template "ref" .}}{{end}}</ol>
+  {{else}}
+  <div class="empty">
+    <p><strong>No suitable publications were found.</strong> CiteWise only shows real publications from Crossref and OpenAlex, so this list is empty rather than filled with made-up references.</p>
+    <p>Try a broader or differently worded topic, remove the year range, or add a short description.</p>
+    <a class="btn" href="/references/search?topic={{.Search.Topic}}">Search again</a>
+  </div>
+  {{end}}
+{{end}}
+{{end}}{{end}}
