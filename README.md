@@ -6,9 +6,15 @@ CiteWise AI helps students and teachers find **real** academic references for an
 
 ## Getting API keys (read this first)
 
-CiteWise **runs without any API keys**. Title search works out of the box. Keys unlock extra features or raise rate limits:
+> **Who provides the keys?** Whoever **hosts** CiteWise. That's the person or organisation running the server, such as a teacher, school IT department, or a student running it on their own computer. They put the keys in the server's `.env` file once, and every visitor uses them.
+>
+> **Visitors never need a key.** Students and teachers using the site in a browser aren't asked for one and have nowhere to enter one. If a feature is unavailable because the host hasn't set a key, the site says so. Ask the host to set it up.
+>
+> **The host pays for usage.** All OpenAI usage is billed to the host's OpenAI account, including every essay any visitor uploads. Set a monthly spending limit in your OpenAI account settings (see step 2 below).
 
-| Key | Needed for | Required? | Cost |
+CiteWise **runs without any API keys**. Title search works out of the box. Keys the host adds unlock extra features or raise rate limits:
+
+| Key (set by the host) | Needed for | Required? | Cost to the host |
 |---|---|---|---|
 | `OPENAI_API_KEY` | AI search queries for title search; **essay upload and analysis** | Only for essay upload | Paid, per use |
 | `OPENALEX_API_KEY` | A higher, dedicated OpenAlex request budget | Recommended | Free |
@@ -16,26 +22,29 @@ CiteWise **runs without any API keys**. Title search works out of the box. Keys 
 
 ### OpenAI API key (enables essay analysis)
 
+These steps are for the **host**:
+
 1. Go to <https://platform.openai.com/signup> and create an account, or sign in.
-2. Open **Settings → Billing** (<https://platform.openai.com/settings/organization/billing>) and add a payment method or credit. API usage is billed separately from a ChatGPT subscription.
+2. Open **Settings → Billing** (<https://platform.openai.com/settings/organization/billing>) and add a payment method or credit. API usage is billed separately from a ChatGPT subscription. Under **Limits** (<https://platform.openai.com/settings/organization/limits>), set a monthly budget so visitors' uploads can't run up unexpected costs.
 3. Open **API keys** (<https://platform.openai.com/api-keys>) and click **Create new secret key**.
 4. Copy the key, which starts with `sk-`. OpenAI shows it only once.
-5. Paste it into your `.env` file: `OPENAI_API_KEY=sk-...`
+5. Paste it into the `.env` file on the server: `OPENAI_API_KEY=sk-...`
 6. Optionally choose a model with `OPENAI_MODEL=` (default: `gpt-4o-mini`, which is inexpensive and works well here).
+7. Restart CiteWise. Keys are read only at startup.
 
-Without this key, title search falls back to keyword queries, and the upload page explains that essay analysis needs a key.
+Without this key, title search falls back to keyword queries, and the upload page tells visitors that essay analysis isn't available on this server.
 
 ### OpenAlex API key (free, recommended)
 
-Without a key, OpenAlex shares a small free daily budget with every user on your network's IP address. To get your own:
+Without a key, OpenAlex shares a small free daily budget with everyone on the server's network IP address. The host can get a dedicated key:
 
 1. Go to <https://openalex.org/settings/api> and sign in, or create a free account.
 2. Copy your API key.
-3. Paste it into `.env`: `OPENALEX_API_KEY=...`
+3. Paste it into the server's `.env`: `OPENALEX_API_KEY=...` and restart CiteWise.
 
 ### Crossref contact email (no key needed)
 
-Crossref does not use API keys. If you provide a contact email, your requests go to Crossref's more reliable "polite pool":
+Crossref does not use API keys. If the host provides a contact email, usually their own, the server's requests go to Crossref's more reliable "polite pool":
 
 ```dotenv
 CROSSREF_MAILTO=you@example.com
@@ -43,7 +52,7 @@ CROSSREF_MAILTO=you@example.com
 
 CiteWise also sends this email to OpenAlex as a contact address.
 
-> Keys stay on the server. They are never sent to the browser, written to logs, or committed to Git (`.env` is git-ignored).
+> Keys stay on the server. They are never sent to visitors' browsers, written to logs, or committed to Git (`.env` is git-ignored). Visitors can't see or extract the host's keys.
 
 ---
 
